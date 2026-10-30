@@ -7,8 +7,8 @@
   <meta name="description" content="選取 YouTube VOD 的精華片段，標記起訖時間並分享。">
   <title>VOD 片段擷取</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23184749'/%3E%3Cpath d='M12 8L25 16L12 24Z' fill='%23a7e4cf'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css?v=20261030-speed-slider">
-  <script type="module" src="app.mjs?v=20261030-speed-slider"></script>
+  <link rel="stylesheet" href="styles.css?v=20261031-timecode">
+  <script type="module" src="app.mjs?v=20261031-timecode"></script>
 </head>
 <body class="is-home">
   <header class="topbar">
@@ -40,10 +40,12 @@
         <div class="transport">
           <button id="playBtn" class="quiet icon-button" aria-label="播放" title="播放" disabled><svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><svg id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
           <div class="speed-control"><label class="sr-only" for="playbackRate">播放速度</label><input id="playbackRate" type="range" min="0" max="0" step="1" value="0" aria-valuetext="1 倍速" title="左右拖曳調整播放速度" disabled><output id="playbackRateValue" for="playbackRate">1×</output></div>
-          <span class="playback-clock"><output id="currentTime" aria-label="目前播放時間">00:00:00</output><span class="muted">／</span><span id="totalTime" class="muted">尚未載入</span></span>
+          <span class="playback-clock"><label for="currentTime" class="sr-only">播放時間碼</label><input id="currentTime" class="timecode-input" type="text" value="00:00:00" placeholder="00:00:00" inputmode="numeric" autocomplete="off" spellcheck="false" maxlength="12" aria-describedby="timecodeHelp timecodeError" title="輸入時間後按 Enter 跳轉；Esc 取消" disabled><span class="muted">／</span><span id="totalTime" class="muted">尚未載入</span></span>
           <button id="playClipBtn" class="quiet" disabled>播放選取片段</button>
           <label class="auto-next"><input id="autoNext" type="checkbox">連播片段</label>
         </div>
+        <span id="timecodeHelp" class="sr-only">可輸入秒數、分:秒或時:分:秒。Enter 跳轉，Escape 取消。</span>
+        <p id="timecodeError" class="timecode-error" role="alert" hidden></p>
         <section class="timeline-panel" aria-labelledby="timelineTitle">
           <div class="section-heading"><h2 id="timelineTitle">完整時間軸</h2></div>
           <div id="overview" class="overview" aria-label="完整影片時間軸"><label for="seek" class="sr-only">播放位置</label><input id="seek" class="overview-seek" type="range" min="0" max="1" value="0" step="0.1" disabled><div id="clipBars"></div><div id="draftRange" class="draft-range" hidden></div><div id="draftStartMarker" class="draft-marker start-marker" hidden><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M2 22V2h22l-5 9 5 9H2"/></svg><span>起點</span></div><div id="draftEndMarker" class="draft-marker end-marker" hidden><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M26 22V2H4l5 9-5 9h22"/></svg><span>終點</span></div><div id="playhead" class="playhead" hidden></div></div>
@@ -60,9 +62,8 @@
         <div class="section-heading clip-heading"><h2>標註片段 <span id="clipCount">0</span></h2></div>
         <div id="clipList" class="clip-list"><div class="empty-list"><p>尚無片段</p></div></div>
         <form id="clipForm" class="clip-editor">
-          <div class="section-heading"><h2 id="editorHeading">新增片段</h2><span id="editBadge" class="muted">時間格式 時:分:秒</span></div>
+          <div class="section-heading"><h2 id="editorHeading">新增片段</h2></div>
           <fieldset id="editorFields" disabled>
-            <div class="time-fields"><label>開始時間<input id="start" value="00:00:00" inputmode="numeric" autocomplete="off" required aria-describedby="formError"></label><label>結束時間<input id="end" value="00:00:30" inputmode="numeric" autocomplete="off" required aria-describedby="formError"></label></div>
             <div class="mark-actions"><button type="button" id="markStart" class="mark-button" title="將目前播放位置設為片段起點（I）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H5v14h4M11 12h9m-4-4 4 4-4 4"/></svg><span>設為起點</span><kbd>I</kbd></button><button type="button" id="markEnd" class="mark-button" title="將目前播放位置設為片段終點（O）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5h4v14h-4M13 12H4m4-4-4 4 4 4"/></svg><span>設為終點</span><kbd>O</kbd></button></div>
             <label>片段標題<input id="clipTitle" placeholder="例如：意料之外的反應" maxlength="120"></label>
             <label>備註<textarea id="note" rows="3" maxlength="1000" placeholder="讓頻道主知道這段的看點、前後文或剪輯建議。"></textarea></label>

@@ -1,7 +1,8 @@
-import {videoId,parseTime,time,validate,decode,shareURL,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs?v=20261030-speed-slider';
+import {videoId,parseTime,time,validate,decode,shareURL,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs?v=20261031-timecode';
 const $ = id => document.getElementById(id);
 let data=null, selected=null, editing=null, player=null, ready=false, current=0, stopAt=null, focusBounds=[0,1], generation=0, readOnly=false, demo=false, activeDraftKey=null;
 let draftMarks={start:false,end:false},overviewGesture=null,suppressOverviewClickUntil=0;
+let draftTimes={start:0,end:30},timecodeEditing=false,timecodeDirty=false;
 let autoSelection=null,titleEditRevision=0;
 const KEY='vod-review-drafts-v1';
 const seekSession=createSeekSession();
@@ -50,7 +51,7 @@ function removeHistory(key){
 function text(tag,value,cls){const el=document.createElement(tag);el.textContent=value;if(cls)el.className=cls;return el;}
 function button(label,fn,cls='quiet'){const el=text('button',label,cls);el.type='button';el.addEventListener('click',fn);return el;}
 function updateTime(){
-  $('currentTime').textContent=time(current);
+  if(!timecodeEditing)$('currentTime').value=time(current);
   $('seek').value=current;
   if(!data)return;
   $('seek').setAttribute('aria-valuetext',time(current));
@@ -59,7 +60,7 @@ function updateTime(){
 }
 function paintDraftMarks(){
   if(!data)return;
-  const start=parseTime($('start').value),end=parseTime($('end').value);
+  const {start,end}=draftTimes;
   for(const [id,field,value,label] of [['draftStartMarker','start',start,'起點'],['draftEndMarker','end',end,'終點']]){
     const marker=$(id),visible=!readOnly&&draftMarks[field]&&Number.isFinite(value)&&value<=data.duration;
     marker.hidden=!visible;if(visible){const ratio=value/data.duration,width=$('overview').getBoundingClientRect().width;marker.style.left=`${ratio*100}%`;marker.classList.toggle('near-left',ratio*width<30);marker.classList.toggle('near-right',(1-ratio)*width<30);marker.title=`${label} ${time(value)}`;marker.setAttribute('aria-label',`${label} ${time(value)}`);}
@@ -141,15 +142,16 @@ function render(){
   const reviewing=readOnly;document.body.classList.toggle('review',reviewing);document.body.classList.toggle('is-home',!data);$('workspace').hidden=!data;$('shareBtn').hidden=!data;
   $('projectTitle').value=data?.title||'未命名片段擷取';$('projectTitle').disabled=!data||reviewing;
   $('editorFields').disabled=!data||reviewing;
+  $('currentTime').disabled=!data;
   $('ownCopy').hidden=!readOnly;$('reviewDetails').hidden=!reviewing;
   if(data){$('totalTime').textContent=time(data.duration);$('seek').max=data.duration;$('seek').disabled=false;renderList();renderTimeline();}
 }
-function resetEditor(){editing=null;autoSelection=null;draftMarks={start:false,end:false};$('clipForm').reset();$('start').value=time(Math.floor(current));$('end').value=time(Math.min(data?.duration||30,Math.floor(current)+30));$('clipTitle').value='';$('note').value='';$('saveClipLabel').textContent='新增片段';$('editorHeading').textContent='新增片段';$('cancelEdit').hidden=true;error('');paintDraftMarks();}
+function resetEditor(){editing=null;autoSelection=null;draftMarks={start:false,end:false};draftTimes={start:Math.floor(current),end:Math.min(data?.duration||30,Math.floor(current)+30)};$('clipForm').reset();$('clipTitle').value='';$('note').value='';$('saveClipLabel').textContent='新增片段';$('editorHeading').textContent='新增片段';$('cancelEdit').hidden=true;error('');paintDraftMarks();}
 function edit(clip,{automatic=false,focus=true}={}){
   if(readOnly)return;
   stopAt=null;
-  editing=clip.id;autoSelection=automatic?clip.id:null;selected=clip.id;$('start').value=time(clip.start);$('end').value=time(clip.end);$('clipTitle').value=clip.title;$('note').value=clip.note;
-  draftMarks={start:true,end:true};$('editorHeading').textContent=automatic?'片段內容':'編輯片段';$('saveClipLabel').textContent=automatic?'新增下一段':'儲存修改';$('cancelEdit').hidden=automatic;error('');renderList();renderTimeline();if(focus)$('start').focus({preventScroll:true});
+  editing=clip.id;autoSelection=automatic?clip.id:null;selected=clip.id;draftTimes={start:clip.start,end:clip.end};$('clipTitle').value=clip.title;$('note').value=clip.note;
+  draftMarks={start:true,end:true};$('editorHeading').textContent=automatic?'片段內容':'編輯片段';$('saveClipLabel').textContent=automatic?'新增下一段':'儲存修改';$('cancelEdit').hidden=automatic;error('');renderList();renderTimeline();if(focus)$('markStart').focus({preventScroll:true});
 }
 function remove(clip){
   if(readOnly)return;
@@ -204,6 +206,7 @@ async function loadVideoTitle(record,token){
 }
 async function mountPlayer({syncTitle=false}={}){
   const token=++generation;ready=false;$('playBtn').disabled=true;updatePlayButton();syncPlaybackRate();stopAt=null;seekSession.cancel();player?.destroy?.();player=null;
+  timecodeEditing=false;timecodeDirty=false;timecodeError('');updateTime();
   if(!readOnly&&(syncTitle||/^未命名(?:片段擷取|審片)$/.test(data.title)||!data.title))loadVideoTitle(data,token);
   let mount=$('playerMount');if(!mount){mount=document.createElement('div');mount.id='playerMount';$('playerShell').append(mount);}mount.hidden=false;mount.replaceChildren();
   playerMessage('正在連接 YouTube 播放器…');
@@ -247,7 +250,8 @@ $('closeHistory').addEventListener('click',()=>$('historyDrawer').close());
 $('historyDrawer').addEventListener('click',event=>{if(event.target===$('historyDrawer')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}});
 function saveClip({keepEditing=false,automatic=false}={}){
   if(!data||readOnly)return;
-  const start=parseTime($('start').value),end=parseTime($('end').value);
+  const {start,end}=draftTimes;
+  if(!draftMarks.start||!draftMarks.end){error('請先使用「設為起點」與「設為終點」選取片段。');return;}
   if(!Number.isFinite(start)||!Number.isFinite(end)){error('請輸入有效時間，例如 00:12:34；分和秒須介於 00–59。');return;}
   if(end<=start){error('結束時間必須晚於開始時間。');return;}
   if(end>data.duration){error(`結束時間超過影片總長度 ${time(data.duration)}，請修正時間。`);return;}
@@ -267,7 +271,7 @@ $('cancelEdit').addEventListener('click',resetEditor);
 function mark(id){
   if(!data||readOnly)return;
   if(id==='start'&&autoSelection&&editing===autoSelection)resetEditor();
-  $(id).value=time(current);draftMarks[id]=true;error('');paintDraftMarks();$('markFeedback').textContent=`${id==='start'?'起點':'終點'}已設為 ${time(current)}`;
+  draftTimes[id]=Math.floor(current);draftMarks[id]=true;error('');paintDraftMarks();$('markFeedback').textContent=`${id==='start'?'起點':'終點'}已設為 ${time(current)}`;
   if(draftMarks.start&&draftMarks.end){
     const wasEditing=!!editing,automatic=!editing||autoSelection===editing;
     if(saveClip({keepEditing:true,automatic}))$('markFeedback').textContent=wasEditing?'片段已更新。':'片段已建立並儲存。';
@@ -278,7 +282,6 @@ for(const id of ['clipTitle','note'])$(id).addEventListener('input',()=>{
   const clip=data?.clips.find(c=>c.id===autoSelection);if(!clip)return;
   clip.title=$('clipTitle').value.trim()||'未命名片段';clip.note=$('note').value.trim();renderList();renderTimeline({keepFocus:true});persist();
 });
-for(const id of ['start','end'])$(id).addEventListener('input',()=>{draftMarks[id]=true;paintDraftMarks();});
 $('markStart').addEventListener('click',()=>mark('start'));$('markEnd').addEventListener('click',()=>mark('end'));
 document.addEventListener('keydown',e=>{if($('historyDrawer').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if(e.key.toLowerCase()==='i')mark('start');if(e.key.toLowerCase()==='o')mark('end');});
 $('projectTitle').addEventListener('input',()=>{if(!data||readOnly)return;++titleEditRevision;data.title=$('projectTitle').value;$('projectTitle').title=data.title;persist();});
@@ -297,6 +300,26 @@ function commitScrub(){
   const target=seekSession.commit();if(target===null)return;
   current=target;if(ready){const wasPaused=player.getPlayerState()===2;player.seekTo(target,true);if(!scrubWasPlaying&&!wasPaused)player.pauseVideo();}updateTime();
 }
+function timecodeError(message){
+  $('timecodeError').textContent=message;$('timecodeError').hidden=!message;$('currentTime').setAttribute('aria-invalid',String(!!message));
+}
+function commitTimecode(){
+  if(!data)return false;const target=parseTime($('currentTime').value);
+  if(!Number.isFinite(target)){timecodeError('請輸入有效時間，例如 83、01:23 或 00:01:23。');return false;}
+  if(target>data.duration){timecodeError(`時間不能超過影片長度 ${time(data.duration)}。`);return false;}
+  timecodeEditing=false;timecodeDirty=false;timecodeError('');beginScrub();seekSession.preview(target);commitScrub();return true;
+}
+$('currentTime').addEventListener('focus',()=>{timecodeEditing=true;timecodeDirty=false;timecodeError('');$('currentTime').value=time(current);$('currentTime').select();});
+$('currentTime').addEventListener('input',()=>{timecodeDirty=true;timecodeError('');});
+$('currentTime').addEventListener('keydown',event=>{
+  if(event.key==='Enter'){event.preventDefault();if(commitTimecode())$('currentTime').blur();}
+  if(event.key==='Escape'){event.preventDefault();timecodeEditing=false;timecodeDirty=false;timecodeError('');updateTime();$('currentTime').blur();}
+});
+$('currentTime').addEventListener('blur',()=>{
+  if(!timecodeEditing)return;
+  if(!timecodeDirty){timecodeEditing=false;updateTime();return;}
+  if(!commitTimecode()){timecodeEditing=false;timecodeDirty=false;updateTime();$('currentTime').removeAttribute('aria-invalid');}
+});
 function beginScrub(){
   scrubWasPlaying=ready&&player.getPlayerState()===1;
   seekSession.begin(current);stopAt=null;
@@ -347,7 +370,7 @@ $('zoom').addEventListener('input',()=>renderTimeline());
 for(const [id,delta] of [['zoomOut',-10],['zoomIn',10]])$(id).addEventListener('click',()=>{$('zoom').value=Math.max(0,Math.min(100,Number($('zoom').value)+delta));renderTimeline();});
 function applyTrim(c,field,value){
   c[field]=trimEndpoint(c,field,value,data.duration)[field];stopAt=null;
-  if(editing===c.id)$(field).value=time(c[field]);
+  if(editing===c.id)draftTimes[field]=c[field];
   renderList();renderTimeline({keepFocus:true});
 }
 function finishTrim(event,cancel=false){
