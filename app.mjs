@@ -1,4 +1,4 @@
-import {videoId,parseTime,time,validate,decode,shareURL,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs';
+import {videoId,parseTime,time,validate,decode,shareURL,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs?v=20261030-speed-slider';
 const $ = id => document.getElementById(id);
 let data=null, selected=null, editing=null, player=null, ready=false, current=0, stopAt=null, focusBounds=[0,1], generation=0, readOnly=false, demo=false, activeDraftKey=null;
 let draftMarks={start:false,end:false},overviewGesture=null,suppressOverviewClickUntil=0;
@@ -6,6 +6,7 @@ let autoSelection=null,titleEditRevision=0;
 const KEY='vod-review-drafts-v1';
 const seekSession=createSeekSession();
 let scrubWasPlaying=false;
+let speedRates=[1],speedDragging=false,speedPending=null,speedSyncTimer=null;
 let cache={last:null,records:{},updated:{}};
 try { const saved=JSON.parse(localStorage.getItem(KEY)||'null'); if(saved?.records&&typeof saved.records==='object') cache={...saved,updated:saved.updated||{}}; } catch {}
 const sorted=()=>data?[...data.clips].sort((a,b)=>a.start-b.start||a.end-b.end):[];
@@ -173,12 +174,23 @@ function updatePlayButton(playing=false){
   $('playBtn').setAttribute('aria-label',playing?'暫停':'播放');$('playBtn').title=playing?'暫停':'播放';
 }
 function syncPlaybackRate(actual){
-  const select=$('playbackRate');
-  if(!ready||!player){select.replaceChildren(new Option('1×','1'));select.disabled=true;return;}
+  const slider=$('playbackRate');
+  if(!ready||!player){
+    clearTimeout(speedSyncTimer);speedRates=[1];speedDragging=false;speedPending=null;
+    slider.min=0;slider.max=0;slider.value=0;slider.disabled=true;showPlaybackRate(1);return;
+  }
   const currentRate=Number.isFinite(actual)?actual:(player.getPlaybackRate?.()||1);
-  const rates=[...new Set([1,...(player.getAvailablePlaybackRates?.()||[]),currentRate])].filter(rate=>Number.isFinite(rate)&&rate>0).sort((a,b)=>a-b);
-  if([...select.options].map(option=>option.value).join(',')!==rates.join(','))select.replaceChildren(...rates.map(rate=>new Option(`${rate}×`,String(rate))));
-  select.value=String(currentRate);select.disabled=rates.length<=1;select.title=select.disabled?'這支影片只支援一般速度':'播放速度';
+  if(speedDragging||(speedPending!==null&&currentRate!==speedPending))return;
+  speedPending=null;speedRates=[...new Set([1,...(player.getAvailablePlaybackRates?.()||[]),currentRate])].filter(rate=>Number.isFinite(rate)&&rate>0).sort((a,b)=>a-b);
+  slider.min=0;slider.max=speedRates.length-1;slider.value=speedRates.indexOf(currentRate);slider.disabled=speedRates.length<=1;
+  slider.title=slider.disabled?'這支影片只支援一般速度':'左右拖曳調整播放速度';showPlaybackRate(currentRate);
+}
+function showPlaybackRate(rate){
+  $('playbackRateValue').textContent=`${rate}×`;$('playbackRate').setAttribute('aria-valuetext',`${rate} 倍速`);
+}
+function confirmPlaybackRate(){
+  clearTimeout(speedSyncTimer);const token=generation;
+  speedSyncTimer=setTimeout(()=>{if(token===generation&&ready&&!speedDragging){speedPending=null;syncPlaybackRate();}},400);
 }
 async function loadVideoTitle(record,token){
   const revision=titleEditRevision,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
@@ -271,11 +283,15 @@ $('markStart').addEventListener('click',()=>mark('start'));$('markEnd').addEvent
 document.addEventListener('keydown',e=>{if($('historyDrawer').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if(e.key.toLowerCase()==='i')mark('start');if(e.key.toLowerCase()==='o')mark('end');});
 $('projectTitle').addEventListener('input',()=>{if(!data||readOnly)return;++titleEditRevision;data.title=$('projectTitle').value;$('projectTitle').title=data.title;persist();});
 $('playBtn').addEventListener('click',()=>{if(!ready)return;stopAt=null;const playing=$('playBtn').getAttribute('aria-label')==='暫停';updatePlayButton(!playing);playing?player.pauseVideo():player.playVideo();});
-$('playbackRate').addEventListener('change',()=>{
-  if(!ready||!player)return;const token=generation,rate=Number($('playbackRate').value);
-  player.setPlaybackRate(rate);
-  setTimeout(()=>{if(token===generation&&ready)syncPlaybackRate();},400);
+$('playbackRate').addEventListener('pointerdown',event=>{
+  if(!ready||event.button!==0||!event.isPrimary)return;speedDragging=true;event.currentTarget.setPointerCapture(event.pointerId);
 });
+$('playbackRate').addEventListener('input',()=>{
+  if(!ready||!player)return;const rate=speedRates[Number($('playbackRate').value)];if(!Number.isFinite(rate))return;
+  speedPending=rate;showPlaybackRate(rate);player.setPlaybackRate(rate);confirmPlaybackRate();
+});
+for(const event of ['change','pointerup','pointercancel','lostpointercapture','blur'])$('playbackRate').addEventListener(event,()=>{speedDragging=false;confirmPlaybackRate();});
+window.addEventListener('blur',()=>{speedDragging=false;confirmPlaybackRate();});
 $('playClipBtn').addEventListener('click',()=>playClip(active()));
 function commitScrub(){
   const target=seekSession.commit();if(target===null)return;

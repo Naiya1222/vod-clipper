@@ -7,8 +7,8 @@
   <meta name="description" content="選取 YouTube VOD 的精華片段，標記起訖時間並分享。">
   <title>VOD 片段擷取</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23184749'/%3E%3Cpath d='M12 8L25 16L12 24Z' fill='%23a7e4cf'/%3E%3C/svg%3E">
-  <link rel="stylesheet" href="styles.css">
-  <script type="module" src="app.mjs"></script>
+  <link rel="stylesheet" href="styles.css?v=20261030-speed-slider">
+  <script type="module" src="app.mjs?v=20261030-speed-slider"></script>
 </head>
 <body class="is-home">
   <header class="topbar">
@@ -39,8 +39,8 @@
         <div id="playerMessage" class="player-message" aria-live="polite" hidden></div>
         <div class="transport">
           <button id="playBtn" class="quiet icon-button" aria-label="播放" title="播放" disabled><svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><svg id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
-          <label class="speed-control" for="playbackRate"><span class="sr-only">播放速度</span><select id="playbackRate" title="播放速度" disabled><option value="1">1×</option></select></label>
-          <output id="currentTime" aria-label="目前播放時間">00:00:00</output><span class="muted">／</span><span id="totalTime" class="muted">尚未載入</span>
+          <div class="speed-control"><label class="sr-only" for="playbackRate">播放速度</label><input id="playbackRate" type="range" min="0" max="0" step="1" value="0" aria-valuetext="1 倍速" title="左右拖曳調整播放速度" disabled><output id="playbackRateValue" for="playbackRate">1×</output></div>
+          <span class="playback-clock"><output id="currentTime" aria-label="目前播放時間">00:00:00</output><span class="muted">／</span><span id="totalTime" class="muted">尚未載入</span></span>
           <button id="playClipBtn" class="quiet" disabled>播放選取片段</button>
           <label class="auto-next"><input id="autoNext" type="checkbox">連播片段</label>
         </div>
