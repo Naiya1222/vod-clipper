@@ -39,6 +39,7 @@
         <div id="playerMessage" class="player-message" aria-live="polite" hidden></div>
         <div class="transport">
           <button id="playBtn" class="quiet icon-button" aria-label="播放" title="播放" disabled><svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><svg id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
+          <label class="speed-control" for="playbackRate"><span class="sr-only">播放速度</span><select id="playbackRate" title="播放速度" disabled><option value="1">1×</option></select></label>
           <output id="currentTime" aria-label="目前播放時間">00:00:00</output><span class="muted">／</span><span id="totalTime" class="muted">尚未載入</span>
           <button id="playClipBtn" class="quiet" disabled>播放選取片段</button>
           <label class="auto-next"><input id="autoNext" type="checkbox">連播片段</label>

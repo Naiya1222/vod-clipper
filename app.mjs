@@ -172,6 +172,14 @@ function updatePlayButton(playing=false){
   $('playIcon').toggleAttribute('hidden',playing);$('pauseIcon').toggleAttribute('hidden',!playing);
   $('playBtn').setAttribute('aria-label',playing?'暫停':'播放');$('playBtn').title=playing?'暫停':'播放';
 }
+function syncPlaybackRate(actual){
+  const select=$('playbackRate');
+  if(!ready||!player){select.replaceChildren(new Option('1×','1'));select.disabled=true;return;}
+  const currentRate=Number.isFinite(actual)?actual:(player.getPlaybackRate?.()||1);
+  const rates=[...new Set([1,...(player.getAvailablePlaybackRates?.()||[]),currentRate])].filter(rate=>Number.isFinite(rate)&&rate>0).sort((a,b)=>a-b);
+  if([...select.options].map(option=>option.value).join(',')!==rates.join(','))select.replaceChildren(...rates.map(rate=>new Option(`${rate}×`,String(rate))));
+  select.value=String(currentRate);select.disabled=rates.length<=1;select.title=select.disabled?'這支影片只支援一般速度':'播放速度';
+}
 async function loadVideoTitle(record,token){
   const revision=titleEditRevision,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);
   try{
@@ -183,7 +191,7 @@ async function loadVideoTitle(record,token){
   }catch{}finally{clearTimeout(timer);}
 }
 async function mountPlayer({syncTitle=false}={}){
-  const token=++generation;ready=false;$('playBtn').disabled=true;updatePlayButton();stopAt=null;seekSession.cancel();player?.destroy?.();player=null;
+  const token=++generation;ready=false;$('playBtn').disabled=true;updatePlayButton();syncPlaybackRate();stopAt=null;seekSession.cancel();player?.destroy?.();player=null;
   if(!readOnly&&(syncTitle||/^未命名(?:片段擷取|審片)$/.test(data.title)||!data.title))loadVideoTitle(data,token);
   let mount=$('playerMount');if(!mount){mount=document.createElement('div');mount.id='playerMount';$('playerShell').append(mount);}mount.hidden=false;mount.replaceChildren();
   playerMessage('正在連接 YouTube 播放器…');
@@ -191,7 +199,7 @@ async function mountPlayer({syncTitle=false}={}){
     await api();if(token!==generation)return;
     player=new YT.Player('playerMount',{videoId:data.video,playerVars:{origin:location.origin,playsinline:1,rel:0},events:{
       onReady:event=>{
-        if(token!==generation)return;ready=true;$('playBtn').disabled=false;
+        if(token!==generation)return;ready=true;$('playBtn').disabled=false;syncPlaybackRate();
         event.target.getIframe().title='YouTube VOD 播放器';event.target.getIframe().setAttribute('referrerpolicy','strict-origin-when-cross-origin');
         const actual=Math.floor(event.target.getDuration());
         if(actual>0&&actual<=MAX_TIME&&!readOnly){
@@ -201,9 +209,10 @@ async function mountPlayer({syncTitle=false}={}){
         }
         playerMessage('');
       },
-      onStateChange:event=>{if(token!==generation)return;if(event.data!==3)updatePlayButton(event.data===1);},
+      onStateChange:event=>{if(token!==generation)return;if(event.data!==3){updatePlayButton(event.data===1);syncPlaybackRate();}},
+      onPlaybackRateChange:event=>{if(token===generation)syncPlaybackRate(event.data);},
       onError:event=>{
-        if(token!==generation)return;ready=false;$('playBtn').disabled=true;updatePlayButton();
+        if(token!==generation)return;ready=false;$('playBtn').disabled=true;updatePlayButton();syncPlaybackRate();
         const messages={2:'影片連結無效。',5:'瀏覽器無法播放這支影片。',100:'影片已移除或設為私人。',101:'頻道主未允許外部嵌入播放。',150:'頻道主未允許外部嵌入播放。',153:'YouTube 未接受這個頁面的播放器識別，請以本機啟動檔或正式網站開啟。'};
         playerMessage(`${messages[event.data]||'YouTube 影片暫時無法播放。'} 你仍可手動標註時間；這不會解除原片的觀看限制。`);
       }
@@ -262,6 +271,11 @@ $('markStart').addEventListener('click',()=>mark('start'));$('markEnd').addEvent
 document.addEventListener('keydown',e=>{if($('historyDrawer').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if(e.key.toLowerCase()==='i')mark('start');if(e.key.toLowerCase()==='o')mark('end');});
 $('projectTitle').addEventListener('input',()=>{if(!data||readOnly)return;++titleEditRevision;data.title=$('projectTitle').value;$('projectTitle').title=data.title;persist();});
 $('playBtn').addEventListener('click',()=>{if(!ready)return;stopAt=null;const playing=$('playBtn').getAttribute('aria-label')==='暫停';updatePlayButton(!playing);playing?player.pauseVideo():player.playVideo();});
+$('playbackRate').addEventListener('change',()=>{
+  if(!ready||!player)return;const token=generation,rate=Number($('playbackRate').value);
+  player.setPlaybackRate(rate);
+  setTimeout(()=>{if(token===generation&&ready)syncPlaybackRate();},400);
+});
 $('playClipBtn').addEventListener('click',()=>playClip(active()));
 function commitScrub(){
   const target=seekSession.commit();if(target===null)return;
@@ -367,7 +381,7 @@ $('closeShare').addEventListener('click',()=>$('sharePanel').hidden=true);
 for(const [id,delta] of [['prevClip',-1],['nextClip',1]])$(id).addEventListener('click',()=>{const clips=sorted();const index=clips.findIndex(c=>c.id===selected);playClip(clips[index+delta]);});
 setInterval(()=>{
   if(!ready||!player)return;
-  const t=player.getCurrentTime?.();if(!Number.isFinite(t)||!seekSession.accept(t,player.getPlayerState?.()===1))return;current=t;
+  const t=player.getCurrentTime?.();if(!Number.isFinite(t)||!seekSession.accept(t,player.getPlayerState?.()===1,player.getPlaybackRate?.()||1))return;current=t;
   if(stopAt!==null&&current>=stopAt){const endpoint=stopAt;stopAt=null;const clips=sorted(),i=clips.findIndex(c=>c.id===selected);
     if($('autoNext').checked&&clips[i+1])playClip(clips[i+1]);
     else{player.pauseVideo();player.seekTo(endpoint,true);current=endpoint;}

@@ -62,11 +62,12 @@ export function createSeekSession({now=()=>performance.now(),settleMs=3000}={}) 
     },
     request(seconds){dragging=false;pending=true;target=seconds;committedAt=now();},
     commit(){if(!dragging)return null;this.request(target);return target;},
-    accept(actual,playing=false){
+    accept(actual,playing=false,playbackRate=1){
       if(dragging)return false;
       if(pending){
         const elapsed=now()-committedAt;
-        const tolerance=.35+(playing?elapsed/1000:0);
+        const rate=Number.isFinite(playbackRate)&&playbackRate>0?playbackRate:1;
+        const tolerance=.35+(playing?elapsed/1000*rate:0);
         // Paused embeds can keep reporting the pre-seek position. Preserve the
         // selected target until acknowledgement; playing has a bounded fallback.
         if((!playing||elapsed<settleMs)&&(elapsed<160||Math.abs(actual-target)>tolerance))return false;
