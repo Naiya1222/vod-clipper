@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="referrer" content="strict-origin-when-cross-origin">
+  <meta name="description" content="選取 YouTube VOD 的精華片段，標記起訖時間並分享。">
+  <title>VOD 片段擷取</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23184749'/%3E%3Cpath d='M12 8L25 16L12 24Z' fill='%23a7e4cf'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="styles.css">
+  <script type="module" src="app.mjs"></script>
+</head>
+<body class="is-home">
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="VOD 片段擷取首頁"><svg viewBox="0 0 32 32" aria-hidden="true"><rect x="1" y="1" width="30" height="30" rx="7"/><path d="m12 9 11 7-11 7z"/></svg><h1>VOD 片段擷取</h1></a>
+    <nav aria-label="工作模式" class="header-actions">
+      <button id="shareBtn" class="primary" disabled hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m10 13 4-4M8 16l-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0m0 12a4 4 0 0 0 6 0l5-5a4 4 0 0 0-6-6l-1 1" transform="translate(1 1) scale(.9)"/></svg>產生分享連結</button>
+    </nav>
+  </header>
+  <main>
+    <form id="sourceForm" class="source-form">
+      <label for="source" class="sr-only">YouTube 影片連結</label>
+      <div class="source-entry"><input id="source" type="url" placeholder="貼上 YouTube 影片連結" required autocomplete="off"><button class="primary source-submit" type="submit" aria-label="載入影片" title="載入影片"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-6-6 6 6-6 6"/></svg></button></div>
+      <button type="button" id="historyBtn" class="quiet history-trigger" aria-haspopup="dialog"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 2 8M4 4v6h6m2-3v5l3 2"/></svg><span>影片記錄</span></button>
+    </form>
+    <div id="notice" role="status" aria-live="polite" hidden></div>
+    <section id="sharePanel" class="share-panel" aria-labelledby="shareHeading" hidden>
+      <div class="section-heading"><h2 id="shareHeading">分享片段擷取結果</h2><button id="closeShare" class="quiet close-icon" aria-label="關閉分享" title="關閉分享"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+      <p id="shareHint">接收者免登入即可查看。這是目前標註的快照，後續編輯請重新產生連結。</p>
+      <div class="share-row"><label for="shareLink" class="sr-only">片段分享連結</label><input id="shareLink" readonly><button id="copyBtn" class="primary">複製連結</button></div>
+      <p id="localWarning" class="warning" hidden>目前是本機版：這個連結只能在同一台電腦開啟。網站正式發布後，再產生連結傳給頻道主。</p>
+      <p id="longWarning" class="muted" hidden>連結較長，傳送時請保留完整內容；可減少備註文字來縮短。</p>
+    </section>
+    <div id="workspace" class="workspace" hidden>
+      <section class="watch-area" aria-label="影片與時間軸">
+        <div id="playerShell" class="player-shell">
+          <div id="playerMount" hidden></div>
+        </div>
+        <div id="playerMessage" class="player-message" aria-live="polite" hidden></div>
+        <div class="transport">
+          <button id="playBtn" class="quiet icon-button" aria-label="播放" title="播放" disabled><svg id="playIcon" viewBox="0 0 24 24" aria-hidden="true"><path d="m8 5 11 7-11 7z"/></svg><svg id="pauseIcon" viewBox="0 0 24 24" aria-hidden="true" hidden><path d="M6 5h4v14H6zM14 5h4v14h-4z"/></svg></button>
+          <output id="currentTime" aria-label="目前播放時間">00:00:00</output><span class="muted">／</span><span id="totalTime" class="muted">尚未載入</span>
+          <button id="playClipBtn" class="quiet" disabled>播放選取片段</button>
+          <label class="auto-next"><input id="autoNext" type="checkbox">連播片段</label>
+        </div>
+        <section class="timeline-panel" aria-labelledby="timelineTitle">
+          <div class="section-heading"><h2 id="timelineTitle">完整時間軸</h2></div>
+          <div id="overview" class="overview" aria-label="完整影片時間軸"><label for="seek" class="sr-only">播放位置</label><input id="seek" class="overview-seek" type="range" min="0" max="1" value="0" step="0.1" disabled><div id="clipBars"></div><div id="draftRange" class="draft-range" hidden></div><div id="draftStartMarker" class="draft-marker start-marker" hidden><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M2 22V2h22l-5 9 5 9H2"/></svg><span>起點</span></div><div id="draftEndMarker" class="draft-marker end-marker" hidden><svg viewBox="0 0 28 24" aria-hidden="true"><path d="M26 22V2H4l5 9-5 9h22"/></svg><span>終點</span></div><div id="playhead" class="playhead" hidden></div></div>
+          <div id="overviewTicks" class="ticks" aria-hidden="true"></div>
+          <div class="section-heading focus-heading"><h2>選取片段 <span class="muted">放大檢視</span></h2><div class="zoom-control" role="group" aria-label="時間軸縮放"><button id="zoomOut" class="quiet zoom-button" type="button" aria-label="縮小時間軸" title="縮小時間軸" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button><label for="zoom" class="sr-only">時間軸縮放</label><input id="zoom" type="range" min="0" max="100" step="1" value="34" disabled><button id="zoomIn" class="quiet zoom-button" type="button" aria-label="放大時間軸" title="放大時間軸" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14M12 5v14"/></svg></button></div></div>
+          <div id="focusTimeline" class="focus-timeline"><div id="focusSpan" class="focus-span" hidden></div><button id="startHandle" class="trim-handle" type="button" role="slider" aria-label="拖曳片段起點" aria-orientation="horizontal" title="拖曳左端調整起點；方向鍵微調 1 秒" hidden><svg viewBox="0 0 12 20" aria-hidden="true"><path d="M4 4v12M8 4v12"/></svg></button><button id="endHandle" class="trim-handle" type="button" role="slider" aria-label="拖曳片段終點" aria-orientation="horizontal" title="拖曳右端調整終點；方向鍵微調 1 秒" hidden><svg viewBox="0 0 12 20" aria-hidden="true"><path d="M4 4v12M8 4v12"/></svg></button><div id="focusHead" class="playhead" hidden></div><p id="focusEmpty">新增或選擇片段，即可微調起訖時間。</p></div>
+          <div id="focusTicks" class="ticks" aria-hidden="true"></div>
+          <div id="rangeReadout" class="range-readout" hidden><span>起點 <output id="trimStartTime"></output></span><span>終點 <output id="trimEndTime"></output></span></div>
+          <p id="trimHint" class="timeline-footnote" hidden>直接拖曳青色片段的左右端點；選取端點後可用方向鍵微調 1 秒，Shift＋方向鍵調整 10 秒。</p>
+        </section>
+      </section>
+      <aside class="inspector" aria-label="標註片段">
+        <div class="project-heading"><label for="projectTitle" class="sr-only">專案標題</label><input id="projectTitle" placeholder="為這份片段擷取命名" maxlength="200" value="未命名片段擷取" disabled><span id="summary" class="muted">尚無標註片段</span></div>
+        <div class="section-heading clip-heading"><h2>標註片段 <span id="clipCount">0</span></h2></div>
+        <div id="clipList" class="clip-list"><div class="empty-list"><p>尚無片段</p></div></div>
+        <form id="clipForm" class="clip-editor">
+          <div class="section-heading"><h2 id="editorHeading">新增片段</h2><span id="editBadge" class="muted">時間格式 時:分:秒</span></div>
+          <fieldset id="editorFields" disabled>
+            <div class="time-fields"><label>開始時間<input id="start" value="00:00:00" inputmode="numeric" autocomplete="off" required aria-describedby="formError"></label><label>結束時間<input id="end" value="00:00:30" inputmode="numeric" autocomplete="off" required aria-describedby="formError"></label></div>
+            <div class="mark-actions"><button type="button" id="markStart" class="mark-button" title="將目前播放位置設為片段起點（I）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5H5v14h4M11 12h9m-4-4 4 4-4 4"/></svg><span>設為起點</span><kbd>I</kbd></button><button type="button" id="markEnd" class="mark-button" title="將目前播放位置設為片段終點（O）"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5h4v14h-4M13 12H4m4-4-4 4 4 4"/></svg><span>設為終點</span><kbd>O</kbd></button></div>
+            <label>片段標題<input id="clipTitle" placeholder="例如：意料之外的反應" maxlength="120"></label>
+            <label>備註<textarea id="note" rows="3" maxlength="1000" placeholder="讓頻道主知道這段的看點、前後文或剪輯建議。"></textarea></label>
+            <p id="formError" role="alert" hidden></p>
+            <div class="editor-actions"><button id="saveClip" type="submit" class="primary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span id="saveClipLabel">新增片段</span></button><button id="cancelEdit" type="button" class="quiet" hidden>取消</button></div>
+            <output id="markFeedback" class="sr-only" aria-live="polite"></output>
+          </fieldset>
+        </form>
+        <section id="reviewDetails" class="review-details" hidden><h2>片段備註</h2><p id="reviewNote">選擇片段，即可查看備註。</p><div class="review-nav"><button id="prevClip" class="quiet">上一段</button><button id="nextClip" class="quiet">下一段</button></div></section>
+        <button id="ownCopy" class="quiet" hidden>建立自己的編輯副本</button>
+      </aside>
+    </div>
+    <noscript>這個工具需要 JavaScript，請在瀏覽器設定中啟用。</noscript>
+  </main>
+  <dialog id="historyDrawer" class="history-drawer" aria-labelledby="historyHeading"><div class="history-heading"><h2 id="historyHeading">影片記錄</h2><button id="closeHistory" class="quiet close-icon" aria-label="關閉影片記錄" title="關閉影片記錄"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div><div id="historyList" class="history-list"></div><div id="historyNotice" role="status" aria-live="polite" hidden></div><p class="history-local-note">記錄儲存在目前瀏覽器</p></dialog>
+</body>
+</html>
