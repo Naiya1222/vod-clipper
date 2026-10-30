@@ -1,9 +1,10 @@
-import {videoId,parseTime,time,validate,decode,shareURL,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs?v=20261031-timecode';
+import {videoId,parseTime,time,validate,decodeShare,compactShareURL,reviewPayload,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs?v=20261031-compact-share';
 const $ = id => document.getElementById(id);
 let data=null, selected=null, editing=null, player=null, ready=false, current=0, stopAt=null, focusBounds=[0,1], generation=0, readOnly=false, demo=false, activeDraftKey=null;
 let draftMarks={start:false,end:false},overviewGesture=null,suppressOverviewClickUntil=0;
 let draftTimes={start:0,end:30},timecodeEditing=false,timecodeDirty=false;
 let autoSelection=null,titleEditRevision=0;
+let hashRequest=0,shareRequest=0;
 const KEY='vod-review-drafts-v1';
 const seekSession=createSeekSession();
 let scrubWasPlaying=false;
@@ -407,10 +408,15 @@ for(const [id,field] of [['startHandle','start'],['endHandle','end']]){
 }
 new ResizeObserver(()=>{const c=active();if(c)paintFocus(c);paintDraftMarks();}).observe($('focusTimeline'));
 $('ownCopy').addEventListener('click',()=>{activeDraftKey=`${data.video}:${uid()}`;readOnly=false;demo=false;history.replaceState(null,'',location.pathname+location.search);resetEditor();render();persist();announce('已建立獨立的影片記錄；原分享連結與既有記錄都不受影響。');});
-$('shareBtn').addEventListener('click',()=>{
+$('shareBtn').addEventListener('click',async()=>{
   if(!data||!data.clips.length)return;
-  try{const url=shareURL(data,location.href);$('shareLink').value=url;$('sharePanel').hidden=false;$('localWarning').hidden=!['localhost','127.0.0.1','[::1]'].includes(location.hostname);$('longWarning').hidden=url.length<8000;$('sharePanel').scrollIntoView({behavior:'smooth',block:'nearest'});}
-  catch(e){announce(e.message);}
+  const record=data,token=generation,request=++shareRequest,snapshot=validate(data);$('shareBtn').disabled=true;$('copyBtn').disabled=true;$('shareBtn').setAttribute('aria-busy','true');
+  try{
+    const url=await compactShareURL(snapshot,location.href);if(request!==shareRequest||data!==record||generation!==token)return;
+    $('shareLink').value=url;$('sharePanel').hidden=false;$('localWarning').hidden=!['localhost','127.0.0.1','[::1]'].includes(location.hostname);$('longWarning').hidden=url.length<8000;$('sharePanel').scrollIntoView({behavior:'smooth',block:'nearest'});
+  }
+  catch(e){if(data===record&&generation===token)announce(e.message);}
+  finally{if(request===shareRequest){$('shareBtn').removeAttribute('aria-busy');$('shareBtn').disabled=!data?.clips.length;$('copyBtn').disabled=false;}}
 });
 $('copyBtn').addEventListener('click',async()=>{
   try{await navigator.clipboard.writeText($('shareLink').value);$('copyBtn').textContent='已複製';setTimeout(()=>$('copyBtn').textContent='複製連結',1800);}
@@ -427,11 +433,14 @@ setInterval(()=>{
   }
   updateTime();
 },160);
-function readHash(){
-  if(!location.hash.startsWith('#review='))return false;
-  try{openData(decode(location.hash.slice(8)),{isReview:true});announce('這是免登入片段擷取版本。點擊任一片段，即可從標註起點觀看。');return true;}
-  catch(e){announce(e.message);return false;}
+async function readHash(){
+  const hash=location.hash,payload=reviewPayload(hash),request=++hashRequest;if(payload===null)return false;
+  try{
+    const record=await decodeShare(payload);if(request!==hashRequest||location.hash!==hash)return false;
+    openData(record,{isReview:true});announce('這是免登入片段擷取版本。點擊任一片段，即可從標註起點觀看。');return true;
+  }
+  catch(e){if(request===hashRequest&&location.hash===hash)announce(e.message);return false;}
 }
-window.addEventListener('hashchange',()=>{if(location.hash.startsWith('#review='))readHash();});
+window.addEventListener('hashchange',readHash);
 readHash();
 if(location.protocol==='file:')announce('請使用資料夾內的啟動檔開啟這個網站。直接開啟 HTML 可能使播放器或分享功能無法正常運作。');
