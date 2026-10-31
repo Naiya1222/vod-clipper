@@ -139,3 +139,12 @@ export function deleteRecord(cache,key){
   const records={...cache.records},updated={...cache.updated};delete records[key];delete updated[key];
   return {...cache,records,updated,last:cache.last===key?(Object.keys(records).at(-1)||null):cache.last};
 }
+
+export async function shortenURL(longURL,request=fetch){
+  const target=new URL(longURL);
+  if(target.protocol!=='https:'||target.hostname!=='naiya1222.github.io'||target.pathname!=='/vod-clipper/'||!/^#(?:r|review)=/.test(target.hash))throw Error('只能縮短正式網站的分享連結。');
+  const response=await request('https://is.gd/create.php',{method:'POST',body:new URLSearchParams({format:'json',url:target.href}),signal:AbortSignal.timeout(15000),credentials:'omit',referrerPolicy:'no-referrer'});
+  const result=await response.json();
+  if(!response.ok||result.errorcode||typeof result.shorturl!=='string'||!/^https:\/\/is\.gd\/[A-Za-z0-9_]+$/.test(result.shorturl))throw Error('無法產生短連結。');
+  return result.shorturl;
+}

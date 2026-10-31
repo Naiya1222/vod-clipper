@@ -1,9 +1,10 @@
-import {videoId,parseTime,time,validate,decodeShare,compactShareURL,reviewPayload,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,MAX_TIME} from './core.mjs?v=20261031-compact-share';
+import {videoId,parseTime,time,validate,decodeShare,compactShareURL,reviewPayload,trimEndpoint,createSeekSession,timelineTime,saveRecord,deleteRecord,shortenURL,MAX_TIME} from './core.mjs?v=20261031-isgd-manual';
 const $ = id => document.getElementById(id);
 let data=null, selected=null, editing=null, player=null, ready=false, current=0, stopAt=null, focusBounds=[0,1], generation=0, readOnly=false, demo=false, activeDraftKey=null;
 let draftMarks={start:false,end:false},overviewGesture=null,suppressOverviewClickUntil=0;
 let draftTimes={start:0,end:30},timecodeEditing=false,timecodeDirty=false;
-let autoSelection=null,titleEditRevision=0;
+let titleEditRevision=0;
+const shortLinks=new Map();
 let hashRequest=0,shareRequest=0;
 const KEY='vod-review-drafts-v1';
 const seekSession=createSeekSession();
@@ -147,12 +148,12 @@ function render(){
   $('ownCopy').hidden=!readOnly;$('reviewDetails').hidden=!reviewing;
   if(data){$('totalTime').textContent=time(data.duration);$('seek').max=data.duration;$('seek').disabled=false;renderList();renderTimeline();}
 }
-function resetEditor(){editing=null;autoSelection=null;draftMarks={start:false,end:false};draftTimes={start:Math.floor(current),end:Math.min(data?.duration||30,Math.floor(current)+30)};$('clipForm').reset();$('clipTitle').value='';$('note').value='';$('saveClipLabel').textContent='新增片段';$('editorHeading').textContent='新增片段';$('cancelEdit').hidden=true;error('');paintDraftMarks();}
-function edit(clip,{automatic=false,focus=true}={}){
+function resetEditor(){editing=null;draftMarks={start:false,end:false};draftTimes={start:Math.floor(current),end:Math.min(data?.duration||30,Math.floor(current)+30)};$('clipForm').reset();$('clipTitle').value='';$('note').value='';$('saveClipLabel').textContent='新增片段';$('editorHeading').textContent='新增片段';$('cancelEdit').hidden=true;error('');paintDraftMarks();}
+function edit(clip,{focus=true}={}){
   if(readOnly)return;
   stopAt=null;
-  editing=clip.id;autoSelection=automatic?clip.id:null;selected=clip.id;draftTimes={start:clip.start,end:clip.end};$('clipTitle').value=clip.title;$('note').value=clip.note;
-  draftMarks={start:true,end:true};$('editorHeading').textContent=automatic?'片段內容':'編輯片段';$('saveClipLabel').textContent=automatic?'新增下一段':'儲存修改';$('cancelEdit').hidden=automatic;error('');renderList();renderTimeline();if(focus)$('markStart').focus({preventScroll:true});
+  editing=clip.id;selected=clip.id;draftTimes={start:clip.start,end:clip.end};$('clipTitle').value=clip.title;$('note').value=clip.note;
+  draftMarks={start:true,end:true};$('editorHeading').textContent='編輯片段';$('saveClipLabel').textContent='儲存修改';$('cancelEdit').hidden=false;error('');renderList();renderTimeline();if(focus)$('markStart').focus({preventScroll:true});
 }
 function remove(clip){
   if(readOnly)return;
@@ -249,7 +250,7 @@ $('sourceForm').addEventListener('submit',event=>{
 $('historyBtn').addEventListener('click',()=>{renderHistory();$('historyNotice').hidden=true;$('historyDrawer').showModal();});
 $('closeHistory').addEventListener('click',()=>$('historyDrawer').close());
 $('historyDrawer').addEventListener('click',event=>{if(event.target===$('historyDrawer')){const r=event.target.getBoundingClientRect();if(event.clientX<r.left||event.clientX>r.right||event.clientY<r.top||event.clientY>r.bottom)event.target.close();}});
-function saveClip({keepEditing=false,automatic=false}={}){
+function saveClip(){
   if(!data||readOnly)return;
   const {start,end}=draftTimes;
   if(!draftMarks.start||!draftMarks.end){error('請先使用「設為起點」與「設為終點」選取片段。');return;}
@@ -261,28 +262,17 @@ function saveClip({keepEditing=false,automatic=false}={}){
   stopAt=null;
   if(editing)data.clips=data.clips.map(c=>c.id===editing?clip:c);else data.clips.push(clip);
   selected=clip.id;
-  if(keepEditing)edit(clip,{automatic,focus:false});
-  else{resetEditor();renderList();renderTimeline();}
+  resetEditor();renderList();renderTimeline();
   persist();return clip;
 }
 $('clipForm').addEventListener('submit',event=>{
-  event.preventDefault();if(autoSelection&&editing===autoSelection){resetEditor();return;}saveClip();
+  event.preventDefault();saveClip();
 });
 $('cancelEdit').addEventListener('click',resetEditor);
 function mark(id){
   if(!data||readOnly)return;
-  if(id==='start'&&autoSelection&&editing===autoSelection)resetEditor();
   draftTimes[id]=Math.floor(current);draftMarks[id]=true;error('');paintDraftMarks();$('markFeedback').textContent=`${id==='start'?'起點':'終點'}已設為 ${time(current)}`;
-  if(draftMarks.start&&draftMarks.end){
-    const wasEditing=!!editing,automatic=!editing||autoSelection===editing;
-    if(saveClip({keepEditing:true,automatic}))$('markFeedback').textContent=wasEditing?'片段已更新。':'片段已建立並儲存。';
-  }
 }
-for(const id of ['clipTitle','note'])$(id).addEventListener('input',()=>{
-  if(!autoSelection||editing!==autoSelection||readOnly)return;
-  const clip=data?.clips.find(c=>c.id===autoSelection);if(!clip)return;
-  clip.title=$('clipTitle').value.trim()||'未命名片段';clip.note=$('note').value.trim();renderList();renderTimeline({keepFocus:true});persist();
-});
 $('markStart').addEventListener('click',()=>mark('start'));$('markEnd').addEventListener('click',()=>mark('end'));
 document.addEventListener('keydown',e=>{if($('historyDrawer').open||e.ctrlKey||e.metaKey||e.altKey||/INPUT|TEXTAREA|SELECT/.test(e.target.tagName))return;if(e.key.toLowerCase()==='i')mark('start');if(e.key.toLowerCase()==='o')mark('end');});
 $('projectTitle').addEventListener('input',()=>{if(!data||readOnly)return;++titleEditRevision;data.title=$('projectTitle').value;$('projectTitle').title=data.title;persist();});
@@ -412,7 +402,16 @@ $('shareBtn').addEventListener('click',async()=>{
   if(!data||!data.clips.length)return;
   const record=data,token=generation,request=++shareRequest,snapshot=validate(data);$('shareBtn').disabled=true;$('copyBtn').disabled=true;$('shareBtn').setAttribute('aria-busy','true');
   try{
-    const url=await compactShareURL(snapshot,location.href);if(request!==shareRequest||data!==record||generation!==token)return;
+    const longURL=await compactShareURL(snapshot,location.href);
+    const local=['localhost','127.0.0.1','[::1]'].includes(location.hostname);
+    let url=longURL,hint='接收者免登入即可查看。這是目前標註的快照，後續編輯請重新產生連結。';
+    if(!local){
+      $('shareHint').textContent='正在產生 is.gd 短連結…';$('shareLink').value=longURL;$('sharePanel').hidden=false;
+      try{url=shortLinks.get(longURL)||await shortenURL(longURL);shortLinks.set(longURL,url);}
+      catch{hint='暫時無法縮址，已保留可用的原始連結。請稍後再試。';}
+    }
+    if(request!==shareRequest||data!==record||generation!==token)return;
+    $('shareHint').textContent=hint;
     $('shareLink').value=url;$('sharePanel').hidden=false;$('localWarning').hidden=!['localhost','127.0.0.1','[::1]'].includes(location.hostname);$('longWarning').hidden=url.length<8000;$('sharePanel').scrollIntoView({behavior:'smooth',block:'nearest'});
   }
   catch(e){if(data===record&&generation===token)announce(e.message);}
